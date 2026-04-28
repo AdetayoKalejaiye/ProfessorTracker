@@ -23,11 +23,11 @@ interface TrackedProfessor {
 const STATUS_OPTIONS = ["NOT_CONTACTED", "EMAILED", "ANSWERED", "REJECTED", "PENDING"]
 
 const STATUS_STYLES: Record<string, { bg: string; color: string; border: string; label: string }> = {
-  NOT_CONTACTED: { bg: "#21262d", color: "#8b949e", border: "#30363d", label: "Not Contacted" },
-  EMAILED: { bg: "#0c2d6b", color: "#58a6ff", border: "#1f6feb", label: "Emailed" },
-  ANSWERED: { bg: "#0f2d1e", color: "#3fb950", border: "#238636", label: "Answered" },
-  REJECTED: { bg: "#3d1a1a", color: "#f85149", border: "#da3633", label: "Rejected" },
-  PENDING: { bg: "#2d2007", color: "#d29922", border: "#9e6a03", label: "Pending" },
+  NOT_CONTACTED: { bg: "#f6f8fa", color: "#57606a", border: "#d0d7de", label: "Not Contacted" },
+  EMAILED: { bg: "#ddf4ff", color: "#0969da", border: "#54aeff", label: "Emailed" },
+  ANSWERED: { bg: "#dafbe1", color: "#1a7f37", border: "#2da44e", label: "Answered" },
+  REJECTED: { bg: "#ffebe9", color: "#d1242f", border: "#ff8182", label: "Rejected" },
+  PENDING: { bg: "#fff8c5", color: "#9a6700", border: "#d4a72c", label: "Pending" },
 }
 
 export default function ListPage() {
@@ -88,23 +88,23 @@ export default function ListPage() {
 
   const filtered = filterStatus ? tracked.filter(t => t.status === filterStatus) : tracked
 
-  if (status === "loading") return <div style={{ backgroundColor: "#0d1117", minHeight: "100vh" }} />
+  if (status === "loading") return <div style={{ backgroundColor: "#ffffff", minHeight: "100vh" }} />
 
   return (
-    <div style={{ backgroundColor: "#0d1117", minHeight: "100vh" }}>
+    <div style={{ backgroundColor: "#ffffff", minHeight: "100vh" }}>
       <Navbar />
       <main style={{ maxWidth: "1280px", margin: "0 auto", padding: "32px 16px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
-          <h1 style={{ color: "#e6edf3", fontSize: "24px", fontWeight: "600", margin: 0 }}>
+          <h1 style={{ color: "#24292f", fontSize: "24px", fontWeight: "600", margin: 0 }}>
             My Professors
-            <span style={{ marginLeft: "12px", backgroundColor: "#21262d", border: "1px solid #30363d", borderRadius: "20px", padding: "2px 10px", fontSize: "14px", color: "#8b949e", fontWeight: "400" }}>
+            <span style={{ marginLeft: "12px", backgroundColor: "#f6f8fa", border: "1px solid #d0d7de", borderRadius: "20px", padding: "2px 10px", fontSize: "14px", color: "#57606a", fontWeight: "400" }}>
               {tracked.length}
             </span>
           </h1>
           <select
             value={filterStatus}
             onChange={e => setFilterStatus(e.target.value)}
-            style={{ padding: "6px 12px", backgroundColor: "#21262d", border: "1px solid #30363d", borderRadius: "6px", color: "#e6edf3", fontSize: "14px" }}
+            style={{ padding: "6px 12px", backgroundColor: "#f6f8fa", border: "1px solid #d0d7de", borderRadius: "6px", color: "#24292f", fontSize: "14px" }}
           >
             <option value="">All Statuses</option>
             {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_STYLES[s].label}</option>)}
@@ -112,25 +112,25 @@ export default function ListPage() {
         </div>
 
         {loading ? (
-          <div style={{ textAlign: "center", padding: "48px", color: "#8b949e" }}>Loading...</div>
+          <div style={{ textAlign: "center", padding: "48px", color: "#57606a" }}>Loading...</div>
         ) : filtered.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "64px 16px", backgroundColor: "#161b22", border: "1px solid #30363d", borderRadius: "6px" }}>
-            <p style={{ color: "#8b949e", fontSize: "16px" }}>
+          <div style={{ textAlign: "center", padding: "64px 16px", backgroundColor: "#f6f8fa", border: "1px solid #d0d7de", borderRadius: "6px" }}>
+            <p style={{ color: "#57606a", fontSize: "16px" }}>
               {tracked.length === 0 ? "You haven't added any professors yet." : "No professors match the selected filter."}
             </p>
             {tracked.length === 0 && (
-              <button onClick={() => router.push("/search")} style={{ padding: "8px 20px", backgroundColor: "#238636", border: "1px solid rgba(240,246,252,0.1)", borderRadius: "6px", color: "#fff", fontSize: "14px", fontWeight: "600" }}>
+              <button onClick={() => router.push("/search")} style={{ padding: "8px 20px", backgroundColor: "#1a7f37", border: "1px solid rgba(27,31,36,0.15)", borderRadius: "6px", color: "#fff", fontSize: "14px", fontWeight: "600" }}>
                 Search Professors
               </button>
             )}
           </div>
         ) : (
-          <div style={{ backgroundColor: "#161b22", border: "1px solid #30363d", borderRadius: "6px", overflow: "hidden" }}>
+          <div style={{ backgroundColor: "#ffffff", border: "1px solid #d0d7de", borderRadius: "6px", overflow: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" as const }}>
               <thead>
-                <tr style={{ borderBottom: "1px solid #30363d" }}>
+                <tr style={{ borderBottom: "1px solid #d0d7de", backgroundColor: "#f6f8fa" }}>
                   {["Professor", "University", "Department", "Email", "Status", "Notes", ""].map(h => (
-                    <th key={h} style={{ padding: "12px 16px", textAlign: "left" as const, color: "#8b949e", fontSize: "12px", fontWeight: "600", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}>{h}</th>
+                    <th key={h} style={{ padding: "12px 16px", textAlign: "left" as const, color: "#57606a", fontSize: "12px", fontWeight: "600", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -138,14 +138,14 @@ export default function ListPage() {
                 {filtered.map((item, idx) => {
                   const style = STATUS_STYLES[item.status] || STATUS_STYLES.NOT_CONTACTED
                   return (
-                    <tr key={item.id} style={{ borderBottom: "1px solid #21262d", backgroundColor: idx % 2 === 0 ? "transparent" : "#0d111780" }}>
+                    <tr key={item.id} style={{ borderBottom: "1px solid #eaeef2", backgroundColor: idx % 2 === 0 ? "transparent" : "#f6f8fa" }}>
                       <td style={{ padding: "12px 16px" }}>
-                        <span style={{ color: "#e6edf3", fontSize: "14px", fontWeight: "500" }}>{item.professor.name}</span>
+                        <span style={{ color: "#24292f", fontSize: "14px", fontWeight: "500" }}>{item.professor.name}</span>
                       </td>
-                      <td style={{ padding: "12px 16px", color: "#8b949e", fontSize: "14px" }}>{item.professor.university}</td>
-                      <td style={{ padding: "12px 16px", color: "#8b949e", fontSize: "14px" }}>{item.professor.department}</td>
+                      <td style={{ padding: "12px 16px", color: "#57606a", fontSize: "14px" }}>{item.professor.university}</td>
+                      <td style={{ padding: "12px 16px", color: "#57606a", fontSize: "14px" }}>{item.professor.department}</td>
                       <td style={{ padding: "12px 16px" }}>
-                        <a href={`mailto:${item.professor.email}`} style={{ color: "#58a6ff", fontSize: "14px", textDecoration: "none" }}>{item.professor.email}</a>
+                        <a href={`mailto:${item.professor.email}`} style={{ color: "#0969da", fontSize: "14px", textDecoration: "none" }}>{item.professor.email}</a>
                       </td>
                       <td style={{ padding: "12px 16px" }}>
                         <select
@@ -167,15 +167,15 @@ export default function ListPage() {
                               onChange={e => setNotesDraft(e.target.value)}
                               onKeyDown={e => { if (e.key === "Enter") updateNotes(item.id, notesDraft); if (e.key === "Escape") setEditingNotes(null) }}
                               autoFocus
-                              style={{ flex: 1, padding: "4px 8px", backgroundColor: "#0d1117", border: "1px solid #30363d", borderRadius: "6px", color: "#e6edf3", fontSize: "13px" }}
+                              style={{ flex: 1, padding: "4px 8px", backgroundColor: "#ffffff", border: "1px solid #d0d7de", borderRadius: "6px", color: "#24292f", fontSize: "13px" }}
                             />
-                            <button onClick={() => updateNotes(item.id, notesDraft)} style={{ padding: "4px 8px", backgroundColor: "#238636", border: "1px solid rgba(240,246,252,0.1)", borderRadius: "6px", color: "#fff", fontSize: "12px" }}>Save</button>
-                            <button onClick={() => setEditingNotes(null)} style={{ padding: "4px 8px", backgroundColor: "#21262d", border: "1px solid #30363d", borderRadius: "6px", color: "#8b949e", fontSize: "12px" }}>✕</button>
+                            <button onClick={() => updateNotes(item.id, notesDraft)} style={{ padding: "4px 8px", backgroundColor: "#1a7f37", border: "1px solid rgba(27,31,36,0.15)", borderRadius: "6px", color: "#fff", fontSize: "12px" }}>Save</button>
+                            <button onClick={() => setEditingNotes(null)} style={{ padding: "4px 8px", backgroundColor: "#f6f8fa", border: "1px solid #d0d7de", borderRadius: "6px", color: "#57606a", fontSize: "12px" }}>✕</button>
                           </div>
                         ) : (
                           <span
                             onClick={() => { setEditingNotes(item.id); setNotesDraft(item.notes) }}
-                            style={{ color: item.notes ? "#e6edf3" : "#484f58", fontSize: "13px", cursor: "pointer", display: "block", padding: "4px", borderRadius: "4px" }}
+                            style={{ color: item.notes ? "#24292f" : "#8c959f", fontSize: "13px", cursor: "pointer", display: "block", padding: "4px", borderRadius: "4px" }}
                             title="Click to edit"
                           >
                             {item.notes || "Add notes..."}
@@ -185,7 +185,7 @@ export default function ListPage() {
                       <td style={{ padding: "12px 16px" }}>
                         <button
                           onClick={() => removeFromList(item.id)}
-                          style={{ padding: "4px 10px", backgroundColor: "transparent", border: "1px solid #da3633", borderRadius: "6px", color: "#f85149", fontSize: "12px" }}
+                          style={{ padding: "4px 10px", backgroundColor: "transparent", border: "1px solid #ff8182", borderRadius: "6px", color: "#d1242f", fontSize: "12px" }}
                         >
                           Remove
                         </button>
