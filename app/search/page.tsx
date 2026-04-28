@@ -73,7 +73,7 @@ export default function SearchPage() {
       body: JSON.stringify({ professorId })
     })
     if (res.ok) {
-      setTrackedIds(prev => new Set([...prev, professorId]))
+      setTrackedIds(prev => new Set(Array.from(prev).concat(professorId)))
       setAddedFeedback(professorId)
       setTimeout(() => setAddedFeedback(null), 2000)
     }

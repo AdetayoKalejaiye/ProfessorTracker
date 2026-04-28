@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { PrismaClient } from "@prisma/client"
 import { getServerSession } from "next-auth"
-import { authOptions } from "../../auth/[...nextauth]/route"
-
-const prisma = new PrismaClient()
+import { authOptions } from "../../../../lib/auth"
+import { prisma } from "../../../../lib/prisma"
 
 function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 3959
@@ -52,26 +50,29 @@ export async function GET(req: NextRequest) {
   const department = searchParams.get("department") || ""
   const range = parseInt(searchParams.get("range") || "50")
 
-  let professors = await prisma.professor.findMany()
+  const cityCoords = query ? CITY_COORDS[query] : null
 
+  // Geo searches: apply haversine in JS (small dataset, no geo extension in SQLite)
+  if (cityCoords) {
+    const where = department ? { department } : {}
+    const all = await prisma.professor.findMany({ where })
+    const professors = all.filter(p =>
+      haversine(cityCoords[0], cityCoords[1], p.latitude, p.longitude) <= range
+    )
+    return NextResponse.json(professors)
+  }
+
+  // Text / department searches: push filtering to the DB
+  const where: Record<string, unknown> = {}
+  if (department) where.department = department
   if (query) {
-    const cityCoords = CITY_COORDS[query]
-    if (cityCoords) {
-      professors = professors.filter(p => 
-        haversine(cityCoords[0], cityCoords[1], p.latitude, p.longitude) <= range
-      )
-    } else {
-      professors = professors.filter(p =>
-        p.university.toLowerCase().includes(query) ||
-        p.city.toLowerCase().includes(query) ||
-        p.name.toLowerCase().includes(query)
-      )
-    }
+    where.OR = [
+      { university: { contains: query } },
+      { city: { contains: query } },
+      { name: { contains: query } },
+    ]
   }
 
-  if (department) {
-    professors = professors.filter(p => p.department === department)
-  }
-
+  const professors = await prisma.professor.findMany({ where })
   return NextResponse.json(professors)
 }
