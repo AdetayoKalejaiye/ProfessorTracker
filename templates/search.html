@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block navbar %}{% include "navbar.html" %}{% endblock %}
+
+{% block content %}
+<div style="background-color:#fff;min-height:100vh">
+  <main style="max-width:1280px;margin:0 auto;padding:32px 16px">
+    <h1 style="color:#24292f;font-size:24px;font-weight:600;margin-bottom:24px">Search Professors</h1>
+
+    <form id="search-form" style="background-color:#f6f8fa;border:1px solid #d0d7de;border-radius:6px;padding:20px;margin-bottom:24px">
+      <div style="display:grid;grid-template-columns:1fr 200px 200px auto;gap:12px;align-items:end">
+        <div>
+          <label style="display:block;color:#57606a;font-size:12px;margin-bottom:6px">University, city, or professor name</label>
+          <input type="text" id="query" placeholder="e.g. MIT, Boston, Stanford..." style="width:100%;padding:8px 12px;background-color:#fff;border:1px solid #d0d7de;border-radius:6px;color:#24292f;font-size:14px" />
+        </div>
+        <div>
+          <label style="display:block;color:#57606a;font-size:12px;margin-bottom:6px">Department</label>
+          <select id="department" style="width:100%;padding:8px 12px;background-color:#fff;border:1px solid #d0d7de;border-radius:6px;color:#24292f;font-size:14px">
+            <option value="">All Departments</option>
+            <option>Computer Science</option>
+            <option>Electrical Engineering</option>
+            <option>Physics</option>
+            <option>Mathematics</option>
+            <option>Biology</option>
+            <option>Chemistry</option>
+            <option>Economics</option>
+            <option>Psychology</option>
+            <option>Neuroscience</option>
+            <option>Data Science</option>
+          </select>
+        </div>
+        <div>
+          <label id="range-label" style="display:block;color:#57606a;font-size:12px;margin-bottom:6px">Range: 50 miles</label>
+          <input type="range" id="range" min="10" max="500" step="10" value="50" style="width:100%;accent-color:#1a7f37" oninput="document.getElementById('range-label').textContent='Range: '+this.value+' miles'" />
+        </div>
+        <button type="submit" style="padding:8px 20px;background-color:#1a7f37;border:1px solid rgba(27,31,36,0.15);border-radius:6px;color:#fff;font-size:14px;font-weight:600;white-space:nowrap">Search</button>
+      </div>
+      <p style="color:#57606a;font-size:12px;margin-top:12px;margin-bottom:0">
+        Tip: Search by city name (e.g. "Boston", "San Francisco") to find professors within the specified range. Range only applies to city searches.
+      </p>
+    </form>
+
+    <div id="status" style="text-align:center;padding:48px;color:#57606a;display:none">Loading...</div>
+    <p id="count" style="color:#57606a;font-size:14px;margin-bottom:16px"></p>
+    <div id="results" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px"></div>
+    <div id="empty" style="display:none;text-align:center;padding:48px;color:#57606a">No professors found. Try a different search.</div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let trackedIds = new Set();
+  let addedFeedback = null;
+
+  async function loadTracked() {
+    const res = await fetch('/api/tracked');
+    if (res.ok) {
+      const data = await res.json();
+      trackedIds = new Set(data.map(t => t.professorId));
+    }
+  }
+
+  async function fetchProfessors(q, dept, range) {
+    document.getElementById('status').style.display = 'block';
+    document.getElementById('results').innerHTML = '';
+    document.getElementById('count').textContent = '';
+    document.getElementById('empty').style.display = 'none';
+
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (dept) params.set('department', dept);
+    params.set('range', range);
+
+    const res = await fetch('/api/professors/search?' + params);
+    document.getElementById('status').style.display = 'none';
+    if (!res.ok) return;
+
+    const professors = await res.json();
+    document.getElementById('count').textContent = professors.length + ' professor' + (professors.length !== 1 ? 's' : '') + ' found';
+
+    const grid = document.getElementById('results');
+    if (professors.length === 0) {
+      document.getElementById('empty').style.display = 'block';
+      return;
+    }
+
+    professors.forEach(prof => {
+      grid.appendChild(buildCard(prof));
+    });
+  }
+
+  function buildCard(prof) {
+    const isTracked = trackedIds.has(prof.id);
+    const interests = prof.interests.split(',').map(s => s.trim()).slice(0, 3);
+
+    const card = document.createElement('div');
+    card.id = 'card-' + prof.id;
+    card.style.cssText = 'background-color:#fff;border:1px solid #d0d7de;border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:12px';
+
+    const tags = interests.map(i =>
+      `<span style="background-color:#ddf4ff;border:1px solid #54aeff;border-radius:20px;padding:2px 8px;color:#0969da;font-size:11px">${i}</span>`
+    ).join('');
+
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <h3 style="color:#24292f;font-size:16px;font-weight:600;margin:0">${prof.name}</h3>
+          <p style="color:#57606a;font-size:13px;margin:2px 0 0">${prof.university}</p>
+        </div>
+        <span style="background-color:#f6f8fa;border:1px solid #d0d7de;border-radius:20px;padding:2px 8px;color:#57606a;font-size:12px;white-space:nowrap">${prof.department}</span>
+      </div>
+      <div>
+        <p style="color:#57606a;font-size:12px;margin:0 0 4px;display:flex;align-items:center;gap:4px">
+          <svg height="12" viewBox="0 0 16 16" fill="#57606a"><path d="M1.75 2h12.5c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0114.25 14H1.75A1.75 1.75 0 010 12.25v-8.5C0 2.784.784 2 1.75 2zM1.5 12.251c0 .138.112.25.25.25h12.5a.25.25 0 00.25-.25V5.809L8.38 9.397a.75.75 0 01-.76 0L1.5 5.809v6.442zm13-8.181L8 7.88 1.5 4.07v-.32a.25.25 0 01.25-.25h12.5a.25.25 0 01.25.25v.32z"/></svg>
+          ${prof.email}
+        </p>
+        <p style="color:#57606a;font-size:12px;margin:0;display:flex;align-items:center;gap:4px">
+          <svg height="12" viewBox="0 0 16 16" fill="#57606a"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zm.75 11.25v.75a.75.75 0 01-1.5 0v-.75a.75.75 0 011.5 0zM8 4.5a1 1 0 100 2 1 1 0 000-2zm0 3.5a.75.75 0 01.75.75v2a.75.75 0 01-1.5 0v-2A.75.75 0 018 8z"/></svg>
+          ${prof.city}, ${prof.state}
+        </p>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">${tags}</div>
+      <button onclick="addToList('${prof.id}', this)" ${isTracked ? 'disabled' : ''}
+        style="padding:6px 16px;background-color:${isTracked ? '#f6f8fa' : '#1a7f37'};border:1px solid ${isTracked ? '#d0d7de' : 'rgba(27,31,36,0.15)'};border-radius:6px;color:${isTracked ? '#57606a' : '#fff'};font-size:14px;font-weight:500;margin-top:auto;transition:background-color 0.2s">
+        ${isTracked ? '✓ In your list' : '+ Add to List'}
+      </button>
+    `;
+    return card;
+  }
+
+  async function addToList(professorId, btn) {
+    const res = await fetch('/api/tracked', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({professorId})
+    });
+    if (res.ok) {
+      trackedIds.add(professorId);
+      btn.disabled = true;
+      btn.textContent = '✓ Added!';
+      btn.style.backgroundColor = '#2da44e';
+      btn.style.color = '#fff';
+      btn.style.borderColor = 'rgba(27,31,36,0.15)';
+      setTimeout(() => {
+        btn.textContent = '✓ In your list';
+        btn.style.backgroundColor = '#f6f8fa';
+        btn.style.color = '#57606a';
+        btn.style.borderColor = '#d0d7de';
+      }, 2000);
+    }
+  }
+
+  document.getElementById('search-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    fetchProfessors(
+      document.getElementById('query').value,
+      document.getElementById('department').value,
+      document.getElementById('range').value
+    );
+  });
+
+  (async () => {
+    await loadTracked();
+    fetchProfessors('', '', 50);
+  })();
+</script>
+{% endblock %}

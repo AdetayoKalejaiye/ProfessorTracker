@@ -13,29 +13,33 @@ A GitHub-styled web app for searching professors and tracking your outreach stat
 
 ## Tech Stack
 
-- **Next.js 14** (App Router, TypeScript)
-- **Prisma** + **SQLite** for the database
-- **NextAuth.js v4** with credentials provider (bcryptjs for password hashing)
-- **Tailwind CSS** + GitHub dark theme
+- **Python** + **Flask**
+- **SQLAlchemy** + **SQLite** for the database
+- **Werkzeug** for password hashing
+- **Jinja2** for server-side HTML templates
+- Vanilla JS + `fetch()` for dynamic interactions
 
 ## Getting Started
 
 ```bash
-# 1. Install dependencies
-npm install
+# 1. Create and activate a virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# 2. Copy env file and set your secret
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Copy env file and set your secret
 cp .env.example .env
 
-# 3. Push DB schema and seed professors
-npx prisma db push
-npx prisma db seed
+# 4. Seed the database with professors
+python seed.py
 
-# 4. Start the dev server
-npm run dev
+# 5. Start the dev server
+python app.py
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:5000](http://localhost:5000).
 
 ## Database
 
