@@ -1,17 +1,3 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-:root {
-  --bg-primary: #ffffff;
-  --bg-surface: #f6f8fa;
-  --border: #d0d7de;
-  --text-primary: #24292f;
-  --text-muted: #57606a;
-  --green-accent: #1a7f37;
-  --green-hover: #2da44e;
-}
-
 * {
   box-sizing: border-box;
 }
@@ -48,10 +34,4 @@ button {
 
 button:disabled {
   cursor: not-allowed;
-}
-
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
 }

@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="min-height:100vh;background-color:#f6f8fa;display:flex;align-items:center;justify-content:center;padding:16px">
+  <div style="width:100%;max-width:340px">
+
+    <div style="text-align:center;margin-bottom:24px">
+      <svg height="48" viewBox="0 0 16 16" fill="#24292f" style="margin-bottom:12px">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+      </svg>
+      <h1 style="color:#24292f;font-size:24px;font-weight:300;margin:0">ProfessorTracker</h1>
+    </div>
+
+    <div style="background-color:#fff;border:1px solid #d0d7de;border-radius:6px;padding:24px">
+      <h2 id="form-title" style="color:#24292f;font-size:20px;font-weight:400;text-align:center;margin-top:0;margin-bottom:20px">Sign in</h2>
+
+      <div id="error-box" style="display:none;background-color:#ffebe9;border:1px solid #ff8182;border-radius:6px;padding:12px;margin-bottom:16px;color:#d1242f;font-size:14px"></div>
+
+      <form id="auth-form" style="display:flex;flex-direction:column;gap:12px">
+        <div id="name-field" style="display:none">
+          <label style="display:block;color:#24292f;font-size:14px;font-weight:600;margin-bottom:6px">Name</label>
+          <input type="text" id="name" style="width:100%;padding:8px 12px;background-color:#fff;border:1px solid #d0d7de;border-radius:6px;color:#24292f;font-size:14px" />
+        </div>
+        <div>
+          <label style="display:block;color:#24292f;font-size:14px;font-weight:600;margin-bottom:6px">Email address</label>
+          <input type="email" id="email" required style="width:100%;padding:8px 12px;background-color:#fff;border:1px solid #d0d7de;border-radius:6px;color:#24292f;font-size:14px" />
+        </div>
+        <div>
+          <label style="display:block;color:#24292f;font-size:14px;font-weight:600;margin-bottom:6px">Password</label>
+          <input type="password" id="password" required style="width:100%;padding:8px 12px;background-color:#fff;border:1px solid #d0d7de;border-radius:6px;color:#24292f;font-size:14px" />
+        </div>
+        <button type="submit" id="submit-btn" style="width:100%;padding:9px 12px;background-color:#1a7f37;border:1px solid rgba(27,31,36,0.15);border-radius:6px;color:#fff;font-size:14px;font-weight:600;margin-top:4px">Sign in</button>
+      </form>
+    </div>
+
+    <div style="margin-top:16px;border:1px solid #d0d7de;border-radius:6px;padding:16px;text-align:center;background-color:#fff">
+      <span id="toggle-text" style="color:#24292f;font-size:14px">
+        New to ProfessorTracker?
+        <button type="button" onclick="toggleMode()" style="background:none;border:none;color:#0969da;cursor:pointer;font-size:14px;padding:0">Create an account.</button>
+      </span>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let mode = 'signin';
+
+  function toggleMode() {
+    mode = mode === 'signin' ? 'signup' : 'signin';
+    document.getElementById('form-title').textContent = mode === 'signin' ? 'Sign in' : 'Create your account';
+    document.getElementById('name-field').style.display = mode === 'signup' ? 'block' : 'none';
+    document.getElementById('submit-btn').textContent = mode === 'signin' ? 'Sign in' : 'Create account';
+    document.getElementById('toggle-text').innerHTML = mode === 'signin'
+      ? 'New to ProfessorTracker? <button type="button" onclick="toggleMode()" style="background:none;border:none;color:#0969da;cursor:pointer;font-size:14px;padding:0">Create an account.</button>'
+      : 'Already have an account? <button type="button" onclick="toggleMode()" style="background:none;border:none;color:#0969da;cursor:pointer;font-size:14px;padding:0">Sign in.</button>';
+    document.getElementById('error-box').style.display = 'none';
+  }
+
+  document.getElementById('auth-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('submit-btn');
+    const errorBox = document.getElementById('error-box');
+    errorBox.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Loading...';
+
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const name = document.getElementById('name').value;
+
+    try {
+      if (mode === 'signup') {
+        const res = await fetch('/auth/signup', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({email, name, password})
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errorBox.textContent = data.error;
+          errorBox.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Create account';
+          return;
+        }
+      }
+
+      const res = await fetch('/auth/login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email, password})
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorBox.textContent = data.error;
+        errorBox.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = mode === 'signin' ? 'Sign in' : 'Create account';
+      } else {
+        window.location.href = '/search';
+      }
+    } catch {
+      errorBox.textContent = 'Something went wrong. Please try again.';
+      errorBox.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = mode === 'signin' ? 'Sign in' : 'Create account';
+    }
+  });
+</script>
+{% endblock %}
