@@ -16,17 +16,7 @@
         <div>
           <label style="display:block;color:#57606a;font-size:12px;margin-bottom:6px">Department</label>
           <select id="department" style="width:100%;padding:8px 12px;background-color:#fff;border:1px solid #d0d7de;border-radius:6px;color:#24292f;font-size:14px">
-            <option value="">All Departments</option>
-            <option>Computer Science</option>
-            <option>Electrical Engineering</option>
-            <option>Physics</option>
-            <option>Mathematics</option>
-            <option>Biology</option>
-            <option>Chemistry</option>
-            <option>Economics</option>
-            <option>Psychology</option>
-            <option>Neuroscience</option>
-            <option>Data Science</option>
+            <option value="">Loading departments...</option>
           </select>
         </div>
         <div>
@@ -44,6 +34,50 @@
     <p id="count" style="color:#57606a;font-size:14px;margin-bottom:16px"></p>
     <div id="results" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px"></div>
     <div id="empty" style="display:none;text-align:center;padding:48px;color:#57606a">No professors found. Try a different search.</div>
+
+    <section style="margin-top:32px;background-color:#f6f8fa;border:1px solid #d0d7de;border-radius:6px;padding:20px">
+      <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px">
+        <div>
+          <h2 style="color:#24292f;font-size:18px;font-weight:600;margin:0 0 4px">Add a professor</h2>
+          <p style="color:#57606a;font-size:13px;margin:0">Add new professors to the directory so searches are driven by your own data too.</p>
+        </div>
+      </div>
+
+      <form id="add-professor-form" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+        <div>
+          <label style="display:block;color:#57606a;font-size:12px;margin-bottom:6px">Name</label>
+          <input id="new-name" type="text" required style="width:100%" />
+        </div>
+        <div>
+          <label style="display:block;color:#57606a;font-size:12px;margin-bottom:6px">University</label>
+          <input id="new-university" type="text" required style="width:100%" />
+        </div>
+        <div>
+          <label style="display:block;color:#57606a;font-size:12px;margin-bottom:6px">Department</label>
+          <input id="new-department" type="text" required style="width:100%" />
+        </div>
+        <div>
+          <label style="display:block;color:#57606a;font-size:12px;margin-bottom:6px">Email</label>
+          <input id="new-email" type="email" required style="width:100%" />
+        </div>
+        <div>
+          <label style="display:block;color:#57606a;font-size:12px;margin-bottom:6px">City</label>
+          <input id="new-city" type="text" required style="width:100%" />
+        </div>
+        <div>
+          <label style="display:block;color:#57606a;font-size:12px;margin-bottom:6px">State</label>
+          <input id="new-state" type="text" maxlength="2" required placeholder="CA" style="width:100%" />
+        </div>
+        <div style="grid-column:1 / -1">
+          <label style="display:block;color:#57606a;font-size:12px;margin-bottom:6px">Research interests</label>
+          <input id="new-interests" type="text" required placeholder="Machine learning, systems, theory" style="width:100%" />
+        </div>
+        <div style="grid-column:1 / -1;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <button type="submit" style="padding:8px 20px;background-color:#1a7f37;border:1px solid rgba(27,31,36,0.15);border-radius:6px;color:#fff;font-size:14px;font-weight:600">Add Professor</button>
+          <span id="add-professor-status" style="color:#57606a;font-size:13px"></span>
+        </div>
+      </form>
+    </section>
   </main>
 </div>
 {% endblock %}
@@ -51,7 +85,14 @@
 {% block scripts %}
 <script>
   let trackedIds = new Set();
-  let addedFeedback = null;
+  let currentSearch = { q: '', dept: '', range: 50 };
+
+  function setDepartments(departments) {
+    const select = document.getElementById('department');
+    const currentValue = select.value;
+    select.innerHTML = '<option value="">All Departments</option>' + departments.map(dept => `<option value="${dept}">${dept}</option>`).join('');
+    select.value = departments.includes(currentValue) ? currentValue : '';
+  }
 
   async function loadTracked() {
     const res = await fetch('/api/tracked');
@@ -61,7 +102,14 @@
     }
   }
 
+  async function loadDepartments() {
+    const res = await fetch('/api/departments');
+    if (!res.ok) return;
+    setDepartments(await res.json());
+  }
+
   async function fetchProfessors(q, dept, range) {
+    currentSearch = { q, dept, range };
     document.getElementById('status').style.display = 'block';
     document.getElementById('results').innerHTML = '';
     document.getElementById('count').textContent = '';
@@ -90,6 +138,49 @@
     });
   }
 
+  async function addProfessor(e) {
+    e.preventDefault();
+    const status = document.getElementById('add-professor-status');
+    const btn = e.currentTarget.querySelector('button[type="submit"]');
+    status.textContent = 'Saving...';
+    btn.disabled = true;
+
+    const payload = {
+      name: document.getElementById('new-name').value,
+      university: document.getElementById('new-university').value,
+      department: document.getElementById('new-department').value,
+      email: document.getElementById('new-email').value,
+      city: document.getElementById('new-city').value,
+      state: document.getElementById('new-state').value,
+      interests: document.getElementById('new-interests').value,
+    };
+
+    try {
+      const res = await fetch('/api/professors', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        status.textContent = data.error || 'Could not add professor.';
+        return;
+      }
+
+      e.currentTarget.reset();
+      status.textContent = `${data.name} added.`;
+      await loadDepartments();
+      await fetchProfessors(currentSearch.q, currentSearch.dept, currentSearch.range);
+    } catch {
+      status.textContent = 'Something went wrong while saving.';
+    } finally {
+      btn.disabled = false;
+      setTimeout(() => {
+        if (status.textContent.endsWith('added.')) status.textContent = '';
+      }, 2500);
+    }
+  }
+
   function buildCard(prof) {
     const isTracked = trackedIds.has(prof.id);
     const interests = prof.interests.split(',').map(s => s.trim()).slice(0, 3);
@@ -113,7 +204,7 @@
       <div>
         <p style="color:#57606a;font-size:12px;margin:0 0 4px;display:flex;align-items:center;gap:4px">
           <svg height="12" viewBox="0 0 16 16" fill="#57606a"><path d="M1.75 2h12.5c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0114.25 14H1.75A1.75 1.75 0 010 12.25v-8.5C0 2.784.784 2 1.75 2zM1.5 12.251c0 .138.112.25.25.25h12.5a.25.25 0 00.25-.25V5.809L8.38 9.397a.75.75 0 01-.76 0L1.5 5.809v6.442zm13-8.181L8 7.88 1.5 4.07v-.32a.25.25 0 01.25-.25h12.5a.25.25 0 01.25.25v.32z"/></svg>
-          ${prof.email}
+          ${prof.email || 'No public email'}
         </p>
         <p style="color:#57606a;font-size:12px;margin:0;display:flex;align-items:center;gap:4px">
           <svg height="12" viewBox="0 0 16 16" fill="#57606a"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zm.75 11.25v.75a.75.75 0 01-1.5 0v-.75a.75.75 0 011.5 0zM8 4.5a1 1 0 100 2 1 1 0 000-2zm0 3.5a.75.75 0 01.75.75v2a.75.75 0 01-1.5 0v-2A.75.75 0 018 8z"/></svg>
@@ -160,7 +251,10 @@
     );
   });
 
+  document.getElementById('add-professor-form').addEventListener('submit', addProfessor);
+
   (async () => {
+    await loadDepartments();
     await loadTracked();
     fetchProfessors('', '', 50);
   })();

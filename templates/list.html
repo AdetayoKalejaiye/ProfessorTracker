@@ -115,7 +115,7 @@
       <td style="padding:12px 16px"><span style="color:#24292f;font-size:14px;font-weight:500">${item.professor.name}</span></td>
       <td style="padding:12px 16px;color:#57606a;font-size:14px">${item.professor.university}</td>
       <td style="padding:12px 16px;color:#57606a;font-size:14px">${item.professor.department}</td>
-      <td style="padding:12px 16px"><a href="mailto:${item.professor.email}" style="color:#0969da;font-size:14px;text-decoration:none">${item.professor.email}</a></td>
+      <td style="padding:12px 16px">${item.professor.email ? `<a href="mailto:${item.professor.email}" style="color:#0969da;font-size:14px;text-decoration:none">${item.professor.email}</a>` : '<span style="color:#8c959f;font-size:14px">No public email</span>'}</td>
       <td style="padding:12px 16px">
         <select onchange="updateStatus('${item.id}', this.value, this)"
           style="padding:4px 8px;background-color:${style.bg};border:1px solid ${style.border};border-radius:20px;color:${style.color};font-size:12px;font-weight:500">
