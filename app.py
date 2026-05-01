@@ -280,6 +280,80 @@ def openalex_query_authors(query=None, institution_ids=None, per_page=100):
     return data.get("results") or []
 
 
+def semantic_scholar_search_authors(query, per_page=100):
+    try:
+        params = {"query": query, "limit": per_page, "fields": "authorId,name,affiliations,hIndex"}
+        url = f"https://api.semanticscholar.org/graph/v1/author/search?{urlencode(params)}"
+        request_obj = Request(url, headers={"Accept": "application/json", "User-Agent": OPENALEX_USER_AGENT})
+        with urlopen(request_obj, timeout=12) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        return data.get("data") or []
+    except Exception:
+        return []
+
+
+def semantic_scholar_to_professor_fields(author):
+    name = normalize_text(author.get("name")) or "Unknown"
+    affiliations = author.get("affiliations") or []
+    university = affiliations[0].get("name") if affiliations else "Unknown"
+    author_id = author.get("authorId") or ""
+    synthetic_email = f"{LIVE_EMAIL_PREFIX}ss-{author_id}@semanticscholar.local"
+    return name, university, synthetic_email
+
+
+def ror_search_institutions(query, per_page=50):
+    try:
+        params = {"query": query, "page": 1, "per_page": per_page}
+        url = f"https://api.ror.org/organizations?{urlencode(params)}"
+        request_obj = Request(url, headers={"Accept": "application/json", "User-Agent": OPENALEX_USER_AGENT})
+        with urlopen(request_obj, timeout=12) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        return data.get("items") or []
+    except Exception:
+        return []
+
+
+def ror_to_institution_fields(institution):
+    name = normalize_text(institution.get("name")) or "Unknown"
+    geo = institution.get("addresses", [{}])[0] if institution.get("addresses") else {}
+    city = normalize_text(geo.get("city")) or normalize_text(name)
+    country_code = normalize_text(geo.get("country_code")) or "US"
+    latitude = geo.get("lat")
+    longitude = geo.get("lng")
+    return name, city, country_code, latitude, longitude
+
+
+def multi_source_author_search(query, per_page=50):
+    authors_by_name_inst = {}
+    priority = 0
+
+    try:
+        openalex_authors = openalex_query_authors(query=query, per_page=per_page)
+        for author in openalex_authors:
+            name = normalize_text(author.get("display_name")) or ""
+            inst = author.get("last_known_institutions", [{}])[0] if author.get("last_known_institutions") else {}
+            inst_name = normalize_text(inst.get("display_name")) or ""
+            key = (name.lower(), inst_name.lower())
+            if key not in authors_by_name_inst:
+                authors_by_name_inst[key] = {"source": "openalex", "author": author, "priority": priority}
+            priority += 1
+    except Exception:
+        pass
+
+    try:
+        ss_authors = semantic_scholar_search_authors(query, per_page=per_page)
+        for author in ss_authors:
+            name, university, _ = semantic_scholar_to_professor_fields(author)
+            key = (name.lower(), university.lower())
+            if key not in authors_by_name_inst:
+                authors_by_name_inst[key] = {"source": "semanticscholar", "author": author, "priority": priority}
+            priority += 1
+    except Exception:
+        pass
+
+    return sorted(authors_by_name_inst.values(), key=lambda x: x["priority"])
+
+
 def openalex_author_department(author):
     topics = author.get("topics") or []
     if topics:
@@ -370,6 +444,7 @@ def live_professors_for_search(query, department, range_miles):
     city_coords = resolve_city_coords(query)
 
     professors = []
+    seen_emails = set()
 
     try:
         institution_ids = []
@@ -377,20 +452,50 @@ def live_professors_for_search(query, department, range_miles):
             institutions = openalex_find_institutions(query)
             institution_ids = [openalex_identifier(inst.get("id")) for inst in institutions if inst.get("id")]
 
-        authors = []
+        authors_with_source = []
         if city_coords and institution_ids:
-            authors = openalex_query_authors(institution_ids=institution_ids, per_page=25)
+            authors = openalex_query_authors(institution_ids=institution_ids, per_page=100)
+            authors_with_source = [{"source": "openalex", "author": a} for a in authors]
         elif query and institution_ids:
-            authors = openalex_query_authors(query=query, institution_ids=institution_ids, per_page=25)
+            authors = openalex_query_authors(query=query, institution_ids=institution_ids, per_page=100)
+            authors_with_source = [{"source": "openalex", "author": a} for a in authors]
         elif query:
-            authors = openalex_query_authors(query=query, per_page=25)
+            authors_with_source = multi_source_author_search(query, per_page=100)
 
-        for author in authors:
-            professor = upsert_openalex_professor(author)
+        for item in authors_with_source:
+            source = item.get("source", "openalex")
+            author = item.get("author", {})
+            
+            if source == "semanticscholar":
+                name, university, synthetic_email = semantic_scholar_to_professor_fields(author)
+                if synthetic_email in seen_emails:
+                    continue
+                seen_emails.add(synthetic_email)
+                
+                professor = Professor.query.filter_by(email=synthetic_email).first()
+                if not professor:
+                    professor = Professor(email=synthetic_email)
+                    db.session.add(professor)
+                
+                professor.name = name
+                professor.university = university
+                professor.department = "Research"
+                professor.interests = "Scholarly research"
+                professor.city = "Unknown"
+                professor.state = "US"
+                professor.country = "USA"
+                professor.latitude = 0.0
+                professor.longitude = 0.0
+            else:
+                professor = upsert_openalex_professor(author)
+                if professor.email in seen_emails:
+                    continue
+                seen_emails.add(professor.email)
+            
             if not professor_matches_department(professor, department):
                 continue
 
-            if city_coords:
+            if city_coords and professor.latitude != 0.0 and professor.longitude != 0.0:
                 distance = haversine(
                     city_coords[0],
                     city_coords[1],
