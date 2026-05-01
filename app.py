@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import re
 from functools import wraps
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -68,6 +69,8 @@ CITY_COORDS = {
 }
 
 OPENALEX_BASE_URL = os.environ.get("OPENALEX_BASE_URL", "https://api.openalex.org")
+CROSSREF_BASE_URL = os.environ.get("CROSSREF_BASE_URL", "https://api.crossref.org")
+ORCID_BASE_URL = os.environ.get("ORCID_BASE_URL", "https://pub.orcid.org/v3.0")
 OPENALEX_CONTACT = os.environ.get("OPENALEX_CONTACT_EMAIL", "").strip()
 OPENALEX_USER_AGENT = (
     f"ProfessorTracker/1.0 ({OPENALEX_CONTACT})"
@@ -111,6 +114,16 @@ def haversine(lat1, lon1, lat2, lon2):
 
 def normalize_text(value):
     return " ".join(str(value or "").strip().split())
+
+
+def tokenize_text(value):
+    return [token for token in re.split(r"[^a-z0-9]+", normalize_text(value).lower()) if token]
+
+
+def fetch_json(url, headers=None, timeout=12):
+    request = Request(url, headers=headers or {"Accept": "application/json", "User-Agent": OPENALEX_USER_AGENT})
+    with urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
 def safe_int(value, default, minimum=None, maximum=None):
@@ -162,37 +175,74 @@ def serialize_professor(professor):
     }
 
 
-def professor_search_score(professor, query):
+def professor_search_score(professor, query, department=""):
     query = normalize_text(query).lower()
-    if not query:
-        return (0, professor.name.lower())
+    department = normalize_text(department).lower()
+    name = professor.name.lower()
+    university = professor.university.lower()
+    dept = professor.department.lower()
+    city = professor.city.lower()
+    interests = professor.interests.lower()
+    email = professor.email.lower()
 
-    fields = {
-        "name": professor.name.lower(),
-        "university": professor.university.lower(),
-        "department": professor.department.lower(),
-        "email": professor.email.lower(),
-        "city": professor.city.lower(),
-        "state": professor.state.lower(),
-        "interests": professor.interests.lower(),
-    }
+    score = 1000
 
-    if fields["name"] == query:
-        return (0, professor.name.lower())
-    if fields["university"] == query:
-        return (1, professor.name.lower())
-    if fields["city"] == query:
-        return (2, professor.name.lower())
-    if fields["department"] == query:
-        return (3, professor.name.lower())
-    if fields["email"] == query:
-        return (4, professor.name.lower())
+    if department:
+        if dept == department:
+            score -= 380
+        elif department in dept:
+            score -= 240
+        elif department in interests:
+            score -= 160
+        elif department in university:
+            score -= 90
 
-    for index, field_name in enumerate(("name", "university", "city", "department", "email", "state", "interests"), start=5):
-        if query in fields[field_name]:
-            return (index, professor.name.lower())
+    if query:
+        if name == query:
+            score -= 520
+        elif name.startswith(query):
+            score -= 360
+        elif query in name:
+            score -= 280
 
-    return (99, professor.name.lower())
+        if university == query:
+            score -= 460
+        elif university.startswith(query):
+            score -= 300
+        elif query in university:
+            score -= 220
+
+        if city == query:
+            score -= 420
+        elif city.startswith(query):
+            score -= 260
+        elif query in city:
+            score -= 180
+
+        if dept == query:
+            score -= 430
+        elif query in dept:
+            score -= 260
+
+        if query in email:
+            score -= 120
+
+        if query in interests:
+            score -= 240
+
+        query_tokens = tokenize_text(query)
+        if query_tokens:
+            interest_tokens = tokenize_text(interests)
+            dept_tokens = tokenize_text(dept)
+            university_tokens = tokenize_text(university)
+            overlap = len(set(query_tokens) & set(interest_tokens))
+            dept_overlap = len(set(query_tokens) & set(dept_tokens))
+            university_overlap = len(set(query_tokens) & set(university_tokens))
+            score -= overlap * 70
+            score -= dept_overlap * 90
+            score -= university_overlap * 35
+
+    return (score, name)
 
 
 def professor_matches_department(professor, department):
@@ -223,9 +273,7 @@ def openalex_get(path, params=None):
     if params:
         url = f"{url}?{urlencode(params, doseq=True)}"
 
-    request = Request(url, headers={"Accept": "application/json", "User-Agent": OPENALEX_USER_AGENT})
-    with urlopen(request, timeout=12) as response:
-        return json.loads(response.read().decode("utf-8"))
+    return fetch_json(url)
 
 
 def openalex_identifier(url_or_id):
@@ -284,9 +332,7 @@ def semantic_scholar_search_authors(query, per_page=100):
     try:
         params = {"query": query, "limit": per_page, "fields": "authorId,name,affiliations,hIndex"}
         url = f"https://api.semanticscholar.org/graph/v1/author/search?{urlencode(params)}"
-        request_obj = Request(url, headers={"Accept": "application/json", "User-Agent": OPENALEX_USER_AGENT})
-        with urlopen(request_obj, timeout=12) as response:
-            data = json.loads(response.read().decode("utf-8"))
+        data = fetch_json(url)
         return data.get("data") or []
     except Exception:
         return []
@@ -305,9 +351,7 @@ def ror_search_institutions(query, per_page=50):
     try:
         params = {"query": query, "page": 1, "per_page": per_page}
         url = f"https://api.ror.org/organizations?{urlencode(params)}"
-        request_obj = Request(url, headers={"Accept": "application/json", "User-Agent": OPENALEX_USER_AGENT})
-        with urlopen(request_obj, timeout=12) as response:
-            data = json.loads(response.read().decode("utf-8"))
+        data = fetch_json(url)
         return data.get("items") or []
     except Exception:
         return []
@@ -323,6 +367,98 @@ def ror_to_institution_fields(institution):
     return name, city, country_code, latitude, longitude
 
 
+def crossref_search_works(query=None, affiliation_names=None, per_page=100):
+    try:
+        params = {"rows": per_page, "select": "author,affiliation,title,DOI"}
+        if affiliation_names:
+            quoted = [f'"{name}"' for name in affiliation_names if name]
+            if quoted:
+                params["query.affiliation"] = " OR ".join(quoted)
+        if query and not affiliation_names:
+            params["query.author"] = query
+
+        url = f"{CROSSREF_BASE_URL.rstrip('/')}/works?{urlencode(params)}"
+        data = fetch_json(url, headers={"Accept": "application/json", "User-Agent": OPENALEX_USER_AGENT})
+        return (data.get("message") or {}).get("items") or []
+    except Exception:
+        return []
+
+
+def crossref_to_author_candidates(items):
+    candidates = []
+    for item in items:
+        title = normalize_text((item.get("title") or [""])[0])
+        affiliations = item.get("affiliation") or []
+        affiliation_name = normalize_text(affiliations[0].get("name")) if affiliations else ""
+        authors = item.get("author") or []
+        for author in authors:
+            given = normalize_text(author.get("given"))
+            family = normalize_text(author.get("family"))
+            name = normalize_text(f"{given} {family}") or normalize_text(author.get("name"))
+            if not name:
+                continue
+            synthetic_email = f"{LIVE_EMAIL_PREFIX}crossref-{name.lower().replace(' ', '-')[:64]}@crossref.local"
+            candidates.append(
+                {
+                    "source": "crossref",
+                    "author": {
+                        "name": name,
+                        "affiliation": affiliation_name,
+                        "title": title,
+                        "synthetic_email": synthetic_email,
+                    },
+                }
+            )
+    return candidates
+
+
+def orcid_search_profiles(query=None, affiliation_names=None, per_page=100):
+    try:
+        params = {"rows": per_page}
+        if affiliation_names:
+            query_parts = [f'affiliation-org-name:"{name}"' for name in affiliation_names if name]
+            if query_parts:
+                params["q"] = " OR ".join(query_parts)
+        elif query:
+            params["q"] = query
+
+        url = f"{ORCID_BASE_URL.rstrip('/')}/expanded-search/?{urlencode(params)}"
+        data = fetch_json(url, headers={"Accept": "application/json", "User-Agent": OPENALEX_USER_AGENT})
+        results = data.get("expanded-search") or data.get("expanded-search:expanded-result") or data.get("result") or []
+        if isinstance(results, dict):
+            results = [results]
+        return results
+    except Exception:
+        return []
+
+
+def orcid_to_author_candidates(results):
+    candidates = []
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        orcid_id = normalize_text(result.get("orcid-id") or result.get("orcid") or result.get("orcid-id:orcid-id"))
+        given = normalize_text(result.get("given-names") or result.get("given-name"))
+        family = normalize_text(result.get("family-names") or result.get("family-name"))
+        name = normalize_text(f"{given} {family}") or normalize_text(result.get("credit-name")) or normalize_text(result.get("given-and-family-names"))
+        institution = normalize_text(result.get("institution-name") or result.get("current-institution-affiliation-name"))
+        if not name:
+            continue
+        synthetic_email = f"{LIVE_EMAIL_PREFIX}orcid-{openalex_identifier(orcid_id) or name.lower().replace(' ', '-')[:64]}@orcid.local"
+        candidates.append(
+            {
+                "source": "orcid",
+                "author": {
+                    "name": name,
+                    "affiliation": institution,
+                    "orcid_id": orcid_id,
+                    "synthetic_email": synthetic_email,
+                },
+            }
+        )
+    return candidates
+
+
 def multi_source_author_search(query, per_page=50):
     authors_by_name_inst = {}
     priority = 0
@@ -336,6 +472,44 @@ def multi_source_author_search(query, per_page=50):
             key = (name.lower(), inst_name.lower())
             if key not in authors_by_name_inst:
                 authors_by_name_inst[key] = {"source": "openalex", "author": author, "priority": priority}
+            priority += 1
+    except Exception:
+        pass
+
+    try:
+        institution_names = []
+        for inst in ror_search_institutions(query, per_page=25):
+            name, *_ = ror_to_institution_fields(inst)
+            if name:
+                institution_names.append(name)
+
+        crossref_items = crossref_search_works(query=query, affiliation_names=institution_names, per_page=per_page)
+        for candidate in crossref_to_author_candidates(crossref_items):
+            author = candidate["author"]
+            name = normalize_text(author.get("name"))
+            university = normalize_text(author.get("affiliation")) or "Unknown"
+            key = (name.lower(), university.lower())
+            if key not in authors_by_name_inst:
+                authors_by_name_inst[key] = {"source": "crossref", "author": author, "priority": priority}
+            priority += 1
+    except Exception:
+        pass
+
+    try:
+        institution_names = []
+        for inst in ror_search_institutions(query, per_page=25):
+            name, *_ = ror_to_institution_fields(inst)
+            if name:
+                institution_names.append(name)
+
+        orcid_results = orcid_search_profiles(query=query, affiliation_names=institution_names, per_page=per_page)
+        for candidate in orcid_to_author_candidates(orcid_results):
+            author = candidate["author"]
+            name = normalize_text(author.get("name"))
+            university = normalize_text(author.get("affiliation")) or "Unknown"
+            key = (name.lower(), university.lower())
+            if key not in authors_by_name_inst:
+                authors_by_name_inst[key] = {"source": "orcid", "author": author, "priority": priority}
             priority += 1
     except Exception:
         pass
@@ -434,7 +608,7 @@ def local_professors_for_search(query, department):
         )
 
     professors = q.all()
-    professors.sort(key=lambda professor: professor_search_score(professor, query))
+    professors.sort(key=lambda professor: professor_search_score(professor, query, department))
     return professors
 
 
@@ -444,13 +618,21 @@ def live_professors_for_search(query, department, range_miles):
     city_coords = resolve_city_coords(query)
 
     professors = []
-    seen_emails = set()
+    seen_people = set()
 
     try:
         institution_ids = []
+        institution_names = []
         if query:
             institutions = openalex_find_institutions(query)
             institution_ids = [openalex_identifier(inst.get("id")) for inst in institutions if inst.get("id")]
+            institution_names.extend([normalize_text(inst.get("display_name")) for inst in institutions if normalize_text(inst.get("display_name"))])
+
+            for inst in ror_search_institutions(query, per_page=25):
+                name, *_ = ror_to_institution_fields(inst)
+                if name:
+                    institution_names.append(name)
+            institution_names = list(dict.fromkeys(institution_names))
 
         authors_with_source = []
         if city_coords and institution_ids:
@@ -459,8 +641,14 @@ def live_professors_for_search(query, department, range_miles):
         elif query and institution_ids:
             authors = openalex_query_authors(query=query, institution_ids=institution_ids, per_page=100)
             authors_with_source = [{"source": "openalex", "author": a} for a in authors]
-        elif query:
-            authors_with_source = multi_source_author_search(query, per_page=100)
+        if query:
+            authors_with_source.extend(multi_source_author_search(query, per_page=100))
+
+            crossref_items = crossref_search_works(query=query, affiliation_names=institution_names, per_page=100)
+            authors_with_source.extend(crossref_to_author_candidates(crossref_items))
+
+            orcid_results = orcid_search_profiles(query=query, affiliation_names=institution_names, per_page=100)
+            authors_with_source.extend(orcid_to_author_candidates(orcid_results))
 
         for item in authors_with_source:
             source = item.get("source", "openalex")
@@ -468,9 +656,10 @@ def live_professors_for_search(query, department, range_miles):
             
             if source == "semanticscholar":
                 name, university, synthetic_email = semantic_scholar_to_professor_fields(author)
-                if synthetic_email in seen_emails:
+                dedupe_key = (normalize_text(name).lower(), normalize_text(university).lower())
+                if dedupe_key in seen_people:
                     continue
-                seen_emails.add(synthetic_email)
+                seen_people.add(dedupe_key)
                 
                 professor = Professor.query.filter_by(email=synthetic_email).first()
                 if not professor:
@@ -486,11 +675,35 @@ def live_professors_for_search(query, department, range_miles):
                 professor.country = "USA"
                 professor.latitude = 0.0
                 professor.longitude = 0.0
+            elif source in {"crossref", "orcid"}:
+                name = normalize_text(author.get("name")) or "Unknown"
+                university = normalize_text(author.get("affiliation")) or "Unknown"
+                synthetic_email = author.get("synthetic_email") or f"{LIVE_EMAIL_PREFIX}{source}-{name.lower().replace(' ', '-')[:64]}@{source}.local"
+                dedupe_key = (name.lower(), university.lower())
+                if dedupe_key in seen_people:
+                    continue
+                seen_people.add(dedupe_key)
+
+                professor = Professor.query.filter_by(email=synthetic_email).first()
+                if not professor:
+                    professor = Professor(email=synthetic_email)
+                    db.session.add(professor)
+
+                professor.name = name
+                professor.university = university
+                professor.department = "Research"
+                professor.interests = normalize_text(author.get("title")) or "Scholarly research"
+                professor.city = "Unknown"
+                professor.state = "US"
+                professor.country = "USA"
+                professor.latitude = 0.0
+                professor.longitude = 0.0
             else:
                 professor = upsert_openalex_professor(author)
-                if professor.email in seen_emails:
+                dedupe_key = (normalize_text(professor.name).lower(), normalize_text(professor.university).lower())
+                if dedupe_key in seen_people:
                     continue
-                seen_emails.add(professor.email)
+                seen_people.add(dedupe_key)
             
             if not professor_matches_department(professor, department):
                 continue
@@ -515,7 +728,7 @@ def live_professors_for_search(query, department, range_miles):
         db.session.rollback()
         return []
 
-    professors.sort(key=lambda professor: professor_search_score(professor, query))
+    professors.sort(key=lambda professor: professor_search_score(professor, query, department))
     return professors
 
 
@@ -614,6 +827,8 @@ def api_search_professors():
     query = normalize_text(request.args.get("q"))
     department = normalize_text(request.args.get("department"))
     range_miles = safe_int(request.args.get("range"), 50, minimum=1, maximum=1000)
+    page = safe_int(request.args.get("page"), 1, minimum=1)
+    per_page = safe_int(request.args.get("per_page"), 50, minimum=1, maximum=100)
     local_professors = local_professors_for_search(query, department)
     live_professors = live_professors_for_search(query, department, range_miles) if query else []
 
@@ -624,7 +839,22 @@ def api_search_professors():
     if not query and not department:
         combined = {prof.email: prof for prof in local_professors}
 
-    return jsonify([serialize_professor(p) for p in combined.values()])
+    results = list(combined.values())
+    total = len(results)
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated = results[start:end]
+
+    return jsonify(
+        {
+            "results": [serialize_professor(p) for p in paginated],
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": max(1, math.ceil(total / per_page)) if total else 1,
+            "has_more": end < total,
+        }
+    )
 
 
 @app.route("/api/departments")
