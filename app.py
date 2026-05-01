@@ -265,7 +265,7 @@ def openalex_find_institutions(query):
     ]
 
 
-def openalex_query_authors(query=None, institution_ids=None, per_page=25):
+def openalex_query_authors(query=None, institution_ids=None, per_page=100):
     params = {
         "per_page": per_page,
         "select": "id,display_name,works_count,last_known_institutions,topics,affiliations",
