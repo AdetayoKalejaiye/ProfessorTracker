@@ -23,9 +23,11 @@ from models import Professor, TrackedProfessor, User, db
 load_dotenv()
 
 app = Flask(__name__)
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+DEFAULT_DB_PATH = os.path.join(BASE_DIR, "db.sqlite3")
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-    "DATABASE_URL", "sqlite:///app.db"
+    "DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}"
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
