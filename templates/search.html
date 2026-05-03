@@ -91,6 +91,8 @@
 <script>
   let trackedIds = new Set();
   let currentSearch = { q: '', dept: '', range: 50, page: 1, totalPages: 1 };
+  let triedFallback = false;
+  const DEFAULT_DEPARTMENTS = {{ default_departments | tojson | safe }};
 
   function setDepartments(departments) {
     const select = document.getElementById('department');
@@ -110,7 +112,12 @@
   async function loadDepartments() {
     const res = await fetch('/api/departments');
     if (!res.ok) return;
-    setDepartments(await res.json());
+    const depts = await res.json();
+    if (!depts || depts.length === 0) {
+      setDepartments(DEFAULT_DEPARTMENTS);
+    } else {
+      setDepartments(depts);
+    }
   }
 
   function updatePagination(meta) {
@@ -155,6 +162,16 @@
     const professors = payload.results || [];
     document.getElementById('count').textContent = payload.total + ' professor' + (payload.total !== 1 ? 's' : '') + ' found';
     updatePagination(payload);
+
+    // If nothing found on the initial empty search, try a fallback department search
+    if (!triedFallback && page === 1 && (!q || q.trim() === '') && (!dept || dept.trim() === '') && payload.total === 0) {
+      triedFallback = true;
+      const firstDept = (document.getElementById('department').options[1] && document.getElementById('department').options[1].value) || DEFAULT_DEPARTMENTS[0];
+      if (firstDept) {
+        fetchProfessors('', firstDept, range, 1);
+        return;
+      }
+    }
 
     const grid = document.getElementById('results');
     if (professors.length === 0) {

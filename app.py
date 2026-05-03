@@ -99,6 +99,62 @@ DEFAULT_DEPARTMENTS = [
     "Sociology",
 ]
 
+DEPARTMENT_ALIAS_MAP = {
+    "Computer Science": [
+        "computer science",
+        "computing",
+        "informatics",
+        "software engineering",
+        "programming languages",
+        "operating systems",
+        "distributed systems",
+        "databases",
+        "computer networks",
+        "computer vision",
+        "machine learning",
+        "artificial intelligence",
+        "ai",
+        "cybersecurity",
+        "information security",
+        "access control",
+        "cryptography",
+        "systems",
+        "human-computer interaction",
+        "hci",
+        "web",
+        "cloud",
+        "data mining",
+        "information retrieval",
+    ],
+    "Electrical Engineering": [
+        "electrical engineering",
+        "electronics",
+        "circuits",
+        "signal processing",
+        "communications",
+        "semiconductor",
+        "embedded systems",
+        "control systems",
+        "vlsi",
+        "hardware",
+        "robotics",
+    ],
+    "Physics": ["physics", "quantum", "astrophysics", "optics", "condensed matter", "particle"],
+    "Mathematics": ["mathematics", "algebra", "analysis", "topology", "geometry", "probability"],
+    "Biology": ["biology", "genetics", "cell biology", "molecular biology", "evolution"],
+    "Chemistry": ["chemistry", "organic chemistry", "biochemistry", "physical chemistry"],
+    "Economics": ["economics", "econometric", "microeconomics", "macroeconomics"],
+    "Psychology": ["psychology", "cognitive science", "behavior", "behavioral science"],
+    "Neuroscience": ["neuroscience", "brain", "neural", "cognitive neuroscience"],
+    "Data Science": ["data science", "data analytics", "data mining", "statistics", "machine learning"],
+    "Statistics": ["statistics", "probability", "bayesian", "inference", "stochastic"],
+    "Mechanical Engineering": ["mechanical engineering", "thermodynamics", "fluids", "dynamics", "manufacturing"],
+    "Civil Engineering": ["civil engineering", "structures", "transportation", "geotechnical", "construction"],
+    "Biomedical Engineering": ["biomedical engineering", "bioengineering", "medical imaging", "biomaterials"],
+    "Linguistics": ["linguistics", "language", "syntax", "semantics", "phonology"],
+    "Sociology": ["sociology", "social", "inequality", "organizations", "demography"],
+}
+
 
 def haversine(lat1, lon1, lat2, lon2):
     """Return distance in miles between two lat/lon points."""
@@ -116,6 +172,35 @@ def haversine(lat1, lon1, lat2, lon2):
 
 def normalize_text(value):
     return " ".join(str(value or "").strip().split())
+
+
+def canonical_department(value):
+    text = normalize_text(value)
+    lower = text.lower()
+    if not lower:
+        return ""
+
+    for dept, aliases in DEPARTMENT_ALIAS_MAP.items():
+        if dept.lower() in lower:
+            return dept
+        if any(alias in lower for alias in aliases):
+            return dept
+
+    return text.title()
+
+
+def infer_department_from_texts(*texts):
+    combined = " ".join(normalize_text(text).lower() for text in texts if normalize_text(text))
+    if not combined:
+        return ""
+
+    for dept, aliases in DEPARTMENT_ALIAS_MAP.items():
+        if dept.lower() in combined:
+            return dept
+        if any(alias in combined for alias in aliases):
+            return dept
+
+    return ""
 
 
 def tokenize_text(value):
@@ -541,20 +626,27 @@ def openalex_author_department(author):
         # Look for explicit department indicators
         if "department" in lower_raw or "dept" in lower_raw or "school of" in lower_raw or "faculty of" in lower_raw:
             candidate = raw.split(",")[0]
-            return normalize_text(candidate)
+            inferred = canonical_department(candidate)
+            if inferred:
+                return inferred
         # Match against common default departments
-        for dept in DEFAULT_DEPARTMENTS:
-            if dept.lower() in lower_raw:
-                return dept
+        inferred = infer_department_from_texts(raw)
+        if inferred:
+            return inferred
 
-    # If no department-like affiliation is found, leave department empty (do not use paper topics)
-    return ""
+    inferred = infer_department_from_texts(openalex_author_interests(author), author.get("display_name"))
+    return inferred
 
 
 def openalex_author_interests(author):
     topics = author.get("topics") or []
     interests = [normalize_text(topic.get("display_name")) for topic in topics if normalize_text(topic.get("display_name"))]
     return ", ".join(interests[:3]) or "Scholarly research"
+
+
+def infer_live_department(*texts):
+    department = infer_department_from_texts(*texts)
+    return department or "Research"
 
 
 def openalex_author_location(author):
@@ -632,6 +724,7 @@ def live_professors_for_search(query, department, range_miles):
     query = normalize_text(query)
     department = normalize_text(department)
     city_coords = resolve_city_coords(query)
+    search_term = query or department
 
     professors = []
     seen_people = set()
@@ -639,12 +732,12 @@ def live_professors_for_search(query, department, range_miles):
     try:
         institution_ids = []
         institution_names = []
-        if query:
-            institutions = openalex_find_institutions(query)
+        if search_term:
+            institutions = openalex_find_institutions(search_term)
             institution_ids = [openalex_identifier(inst.get("id")) for inst in institutions if inst.get("id")]
             institution_names.extend([normalize_text(inst.get("display_name")) for inst in institutions if normalize_text(inst.get("display_name"))])
 
-            for inst in ror_search_institutions(query, per_page=25):
+            for inst in ror_search_institutions(search_term, per_page=25):
                 name, *_ = ror_to_institution_fields(inst)
                 if name:
                     institution_names.append(name)
@@ -654,16 +747,16 @@ def live_professors_for_search(query, department, range_miles):
         if city_coords and institution_ids:
             authors = openalex_query_authors(institution_ids=institution_ids, per_page=100)
             authors_with_source = [{"source": "openalex", "author": a} for a in authors]
-        elif query and institution_ids:
-            authors = openalex_query_authors(query=query, institution_ids=institution_ids, per_page=100)
+        elif search_term and institution_ids:
+            authors = openalex_query_authors(query=search_term, institution_ids=institution_ids, per_page=100)
             authors_with_source = [{"source": "openalex", "author": a} for a in authors]
-        if query:
-            authors_with_source.extend(multi_source_author_search(query, per_page=100))
+        if search_term:
+            authors_with_source.extend(multi_source_author_search(search_term, per_page=100))
 
-            crossref_items = crossref_search_works(query=query, affiliation_names=institution_names, per_page=100)
+            crossref_items = crossref_search_works(query=search_term, affiliation_names=institution_names, per_page=100)
             authors_with_source.extend(crossref_to_author_candidates(crossref_items))
 
-            orcid_results = orcid_search_profiles(query=query, affiliation_names=institution_names, per_page=100)
+            orcid_results = orcid_search_profiles(query=search_term, affiliation_names=institution_names, per_page=100)
             authors_with_source.extend(orcid_to_author_candidates(orcid_results))
 
         for item in authors_with_source:
@@ -684,7 +777,7 @@ def live_professors_for_search(query, department, range_miles):
                 
                 professor.name = name
                 professor.university = university
-                professor.department = "Research"
+                professor.department = infer_live_department(search_term, university, query)
                 professor.interests = "Scholarly research"
                 professor.city = "Unknown"
                 professor.state = "US"
@@ -707,7 +800,7 @@ def live_professors_for_search(query, department, range_miles):
 
                 professor.name = name
                 professor.university = university
-                professor.department = "Research"
+                professor.department = infer_live_department(search_term, university, author.get("title"), author.get("affiliation"))
                 professor.interests = normalize_text(author.get("title")) or "Scholarly research"
                 professor.city = "Unknown"
                 professor.state = "US"
@@ -734,7 +827,7 @@ def live_professors_for_search(query, department, range_miles):
                 if distance > range_miles:
                     continue
 
-            elif query and not professor_matches_query(professor, query):
+            elif search_term and not professor_matches_query(professor, search_term):
                 continue
 
             professors.append(professor)
@@ -775,7 +868,7 @@ def index():
 @app.route("/search")
 @login_required
 def search():
-    return render_template("search.html", user_email=session.get("user_email"))
+    return render_template("search.html", user_email=session.get("user_email"), default_departments=DEFAULT_DEPARTMENTS)
 
 
 @app.route("/list")
@@ -846,7 +939,7 @@ def api_search_professors():
     page = safe_int(request.args.get("page"), 1, minimum=1)
     per_page = safe_int(request.args.get("per_page"), 50, minimum=1, maximum=100)
     local_professors = local_professors_for_search(query, department)
-    live_professors = live_professors_for_search(query, department, range_miles) if query else []
+    live_professors = live_professors_for_search(query, department, range_miles) if query or department else []
 
     combined = {}
     for professor in local_professors + live_professors:
@@ -877,14 +970,10 @@ def api_search_professors():
 @login_required
 def api_departments():
     departments = set(DEFAULT_DEPARTMENTS)
-    departments.update(
-        row[0]
-        for row in db.session.query(Professor.department)
-        .distinct()
-        .order_by(Professor.department.asc())
-        .all()
-        if row[0]
-    )
+    for (value,) in db.session.query(Professor.department).distinct().all():
+        if value:
+            departments.add(canonical_department(value))
+    departments = {dept for dept in departments if dept}
     return jsonify(sorted(departments))
 
 
