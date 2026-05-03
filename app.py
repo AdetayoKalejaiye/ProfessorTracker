@@ -194,8 +194,8 @@ def professor_search_score(professor, query, department=""):
             score -= 380
         elif department in dept:
             score -= 240
-        elif department in interests:
-            score -= 160
+        # do not match department against research interests (topics) — department filter
+        # should represent an academic department, not paper topics
         elif department in university:
             score -= 90
 
@@ -252,9 +252,9 @@ def professor_matches_department(professor, department):
     if not department:
         return True
 
-    haystack = " ".join(
-        [professor.department, professor.university, professor.city, professor.state, professor.interests]
-    ).lower()
+    # Only match department against explicit department and university fields.
+    # Do NOT match against interests (research topics) to avoid returning topic-based matches.
+    haystack = " ".join([professor.department or "", professor.university or ""]).lower()
     return department in haystack
 
 
@@ -531,10 +531,24 @@ def multi_source_author_search(query, per_page=50):
 
 
 def openalex_author_department(author):
-    topics = author.get("topics") or []
-    if topics:
-        return normalize_text(topics[0].get("display_name")) or "Research"
-    return "Research"
+    # Prefer extracting an actual academic department from affiliations when available.
+    affiliations = author.get("affiliations") or []
+    for aff in affiliations:
+        raw = normalize_text(aff.get("raw_affiliation_string") or aff.get("source") or "")
+        if not raw:
+            continue
+        lower_raw = raw.lower()
+        # Look for explicit department indicators
+        if "department" in lower_raw or "dept" in lower_raw or "school of" in lower_raw or "faculty of" in lower_raw:
+            candidate = raw.split(",")[0]
+            return normalize_text(candidate)
+        # Match against common default departments
+        for dept in DEFAULT_DEPARTMENTS:
+            if dept.lower() in lower_raw:
+                return dept
+
+    # If no department-like affiliation is found, leave department empty (do not use paper topics)
+    return ""
 
 
 def openalex_author_interests(author):
