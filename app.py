@@ -13,12 +13,10 @@ from flask import (
     redirect,
     render_template,
     request,
-    session,
     url_for,
 )
-from werkzeug.security import check_password_hash, generate_password_hash
 
-from models import Professor, TrackedProfessor, User, db
+from models import Professor, db
 
 load_dotenv()
 
@@ -844,12 +842,7 @@ def live_professors_for_search(query, department, range_miles):
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if "user_id" not in session:
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "Unauthorized"}), 401
-            return redirect(url_for("index"))
         return f(*args, **kwargs)
-
     return decorated
 
 
@@ -860,69 +853,17 @@ def login_required(f):
 
 @app.route("/")
 def index():
-    if "user_id" in session:
-        return redirect(url_for("search"))
-    return render_template("index.html")
+    return redirect(url_for("search"))
 
 
 @app.route("/search")
-@login_required
 def search():
-    return render_template("search.html", user_email=session.get("user_email"), default_departments=DEFAULT_DEPARTMENTS)
+    return render_template("search.html", default_departments=DEFAULT_DEPARTMENTS)
 
 
 @app.route("/list")
-@login_required
 def list_professors():
-    return render_template("list.html", user_email=session.get("user_email"))
-
-
-# ---------------------------------------------------------------------------
-# Auth API
-# ---------------------------------------------------------------------------
-
-
-@app.route("/auth/signup", methods=["POST"])
-def signup():
-    data = request.get_json()
-    email = normalize_text(data.get("email")).lower()
-    name = (data.get("name") or "").strip()
-    password = data.get("password") or ""
-
-    if not email or not name or not password:
-        return jsonify({"error": "All fields required"}), 400
-
-    if User.query.filter_by(email=email).first():
-        return jsonify({"error": "Email already registered"}), 400
-
-    hashed = generate_password_hash(password)
-    user = User(email=email, name=name, password=hashed)
-    db.session.add(user)
-    db.session.commit()
-
-    return jsonify({"id": user.id, "email": user.email, "name": user.name}), 201
-
-
-@app.route("/auth/login", methods=["POST"])
-def login():
-    data = request.get_json()
-    email = normalize_text(data.get("email")).lower()
-    password = data.get("password") or ""
-
-    user = User.query.filter_by(email=email).first()
-    if not user or not check_password_hash(user.password, password):
-        return jsonify({"error": "Invalid email or password"}), 401
-
-    session["user_id"] = user.id
-    session["user_email"] = user.email
-    session["user_name"] = user.name
-    return jsonify({"id": user.id, "email": user.email, "name": user.name})
-
-
-@app.route("/auth/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("index"))
+    return render_template("list.html")
 
 
 # ---------------------------------------------------------------------------
@@ -931,7 +872,6 @@ def logout():
 
 
 @app.route("/api/professors/search")
-@login_required
 def api_search_professors():
     query = normalize_text(request.args.get("q"))
     department = normalize_text(request.args.get("department"))
@@ -967,7 +907,6 @@ def api_search_professors():
 
 
 @app.route("/api/departments")
-@login_required
 def api_departments():
     departments = set(DEFAULT_DEPARTMENTS)
     for (value,) in db.session.query(Professor.department).distinct().all():
@@ -978,7 +917,6 @@ def api_departments():
 
 
 @app.route("/api/professors", methods=["POST"])
-@login_required
 def api_create_professor():
     data = request.get_json(silent=True) or {}
     required_fields = ["name", "university", "department", "email", "interests", "city", "state"]
@@ -1030,119 +968,6 @@ def api_create_professor():
     db.session.commit()
 
     return jsonify(serialize_professor(professor)), 201
-
-
-# ---------------------------------------------------------------------------
-# Tracked professors API
-# ---------------------------------------------------------------------------
-
-
-@app.route("/api/tracked", methods=["GET"])
-@login_required
-def api_get_tracked():
-    user_id = session["user_id"]
-    tracked = (
-        TrackedProfessor.query.filter_by(user_id=user_id)
-        .order_by(TrackedProfessor.created_at.desc())
-        .all()
-    )
-    return jsonify(
-        [
-            {
-                "id": t.id,
-                "status": t.status,
-                "notes": t.notes,
-                "professorId": t.professor_id,
-                "professor": serialize_professor(t.professor),
-            }
-            for t in tracked
-        ]
-    )
-
-
-@app.route("/api/tracked", methods=["POST"])
-@login_required
-def api_add_tracked():
-    user_id = session["user_id"]
-    data = request.get_json(silent=True) or {}
-    professor_id = normalize_text(data.get("professorId"))
-
-    if not professor_id:
-        return jsonify({"error": "professorId is required"}), 400
-
-    professor = Professor.query.filter_by(id=professor_id).first()
-    if not professor:
-        return jsonify({"error": "Professor not found"}), 404
-
-    existing = TrackedProfessor.query.filter_by(
-        user_id=user_id, professor_id=professor_id
-    ).first()
-    if existing:
-        return jsonify({
-            "id": existing.id,
-            "status": existing.status,
-            "notes": existing.notes,
-            "professorId": existing.professor_id,
-        })
-
-    tracked = TrackedProfessor(user_id=user_id, professor_id=professor_id)
-    db.session.add(tracked)
-    db.session.commit()
-
-    return jsonify(
-        {
-            "id": tracked.id,
-            "status": tracked.status,
-            "notes": tracked.notes,
-            "professorId": tracked.professor_id,
-        }
-    ), 201
-
-
-@app.route("/api/tracked", methods=["PATCH"])
-@login_required
-def api_update_tracked():
-    user_id = session["user_id"]
-    data = request.get_json(silent=True) or {}
-    tracked_id = normalize_text(data.get("id"))
-
-    if not tracked_id:
-        return jsonify({"error": "id is required"}), 400
-
-    tracked = TrackedProfessor.query.filter_by(
-        id=tracked_id, user_id=user_id
-    ).first()
-    if not tracked:
-        return jsonify({"error": "Not found"}), 404
-
-    if "status" in data:
-        tracked.status = data["status"]
-    if "notes" in data:
-        tracked.notes = data["notes"]
-
-    db.session.commit()
-    return jsonify({"id": tracked.id, "status": tracked.status, "notes": tracked.notes})
-
-
-@app.route("/api/tracked", methods=["DELETE"])
-@login_required
-def api_delete_tracked():
-    user_id = session["user_id"]
-    data = request.get_json(silent=True) or {}
-    tracked_id = normalize_text(data.get("id"))
-
-    if not tracked_id:
-        return jsonify({"error": "id is required"}), 400
-
-    tracked = TrackedProfessor.query.filter_by(
-        id=tracked_id, user_id=user_id
-    ).first()
-    if not tracked:
-        return jsonify({"error": "Not found"}), 404
-
-    db.session.delete(tracked)
-    db.session.commit()
-    return jsonify({"success": True})
 
 
 if __name__ == "__main__":

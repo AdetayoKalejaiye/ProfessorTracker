@@ -89,10 +89,40 @@
 
 {% block scripts %}
 <script>
-  let trackedIds = new Set();
+  const STORAGE_KEY = 'professorTracker_tracked';
+  let trackedProfessors = new Map(); // Maps professorId to {id, status, notes, professor}
   let currentSearch = { q: '', dept: '', range: 50, page: 1, totalPages: 1 };
   let triedFallback = false;
   const DEFAULT_DEPARTMENTS = {{ default_departments | tojson | safe }};
+
+  function getStorageId() {
+    return 'id_' + Math.random().toString(36).substr(2, 9);
+  }
+
+  function loadTrackedFromStorage() {
+    try {
+      const data = localStorage.getItem(STORAGE_KEY);
+      if (data) {
+        const arr = JSON.parse(data);
+        trackedProfessors.clear();
+        arr.forEach(item => {
+          trackedProfessors.set(item.professorId, item);
+        });
+      }
+    } catch (e) {
+      console.error('Error loading tracked professors:', e);
+      trackedProfessors.clear();
+    }
+  }
+
+  function saveTrackedToStorage() {
+    try {
+      const arr = Array.from(trackedProfessors.values());
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+    } catch (e) {
+      console.error('Error saving tracked professors:', e);
+    }
+  }
 
   function setDepartments(departments) {
     const select = document.getElementById('department');
@@ -101,12 +131,8 @@
     select.value = departments.includes(currentValue) ? currentValue : '';
   }
 
-  async function loadTracked() {
-    const res = await fetch('/api/tracked');
-    if (res.ok) {
-      const data = await res.json();
-      trackedIds = new Set(data.map(t => t.professorId));
-    }
+  function loadTracked() {
+    loadTrackedFromStorage();
   }
 
   async function loadDepartments() {
@@ -163,7 +189,6 @@
     document.getElementById('count').textContent = payload.total + ' professor' + (payload.total !== 1 ? 's' : '') + ' found';
     updatePagination(payload);
 
-    // If nothing found on the initial empty search, try a fallback department search
     if (!triedFallback && page === 1 && (!q || q.trim() === '') && (!dept || dept.trim() === '') && payload.total === 0) {
       triedFallback = true;
       const firstDept = (document.getElementById('department').options[1] && document.getElementById('department').options[1].value) || DEFAULT_DEPARTMENTS[0];
@@ -233,7 +258,7 @@
   }
 
   function buildCard(prof) {
-    const isTracked = trackedIds.has(prof.id);
+    const isTracked = trackedProfessors.has(prof.id);
     const interests = prof.interests.split(',').map(s => s.trim()).slice(0, 3);
 
     const card = document.createElement('div');
@@ -263,7 +288,7 @@
         </p>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:4px">${tags}</div>
-      <button onclick="addToList('${prof.id}', this)" ${isTracked ? 'disabled' : ''}
+      <button onclick="addToList('${prof.id}', this, ${JSON.stringify(prof).replace(/'/g, "&#39;")})" ${isTracked ? 'disabled' : ''}
         style="padding:6px 16px;background-color:${isTracked ? '#f6f8fa' : '#1a7f37'};border:1px solid ${isTracked ? '#d0d7de' : 'rgba(27,31,36,0.15)'};border-radius:6px;color:${isTracked ? '#57606a' : '#fff'};font-size:14px;font-weight:500;margin-top:auto;transition:background-color 0.2s">
         ${isTracked ? '✓ In your list' : '+ Add to List'}
       </button>
@@ -271,26 +296,30 @@
     return card;
   }
 
-  async function addToList(professorId, btn) {
-    const res = await fetch('/api/tracked', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({professorId})
-    });
-    if (res.ok) {
-      trackedIds.add(professorId);
-      btn.disabled = true;
-      btn.textContent = '✓ Added!';
-      btn.style.backgroundColor = '#2da44e';
-      btn.style.color = '#fff';
-      btn.style.borderColor = 'rgba(27,31,36,0.15)';
-      setTimeout(() => {
-        btn.textContent = '✓ In your list';
-        btn.style.backgroundColor = '#f6f8fa';
-        btn.style.color = '#57606a';
-        btn.style.borderColor = '#d0d7de';
-      }, 2000);
+  function addToList(professorId, btn, professor) {
+    if (!trackedProfessors.has(professorId)) {
+      const tracked = {
+        id: getStorageId(),
+        status: 'NOT_CONTACTED',
+        notes: '',
+        professorId: professorId,
+        professor: professor
+      };
+      trackedProfessors.set(professorId, tracked);
+      saveTrackedToStorage();
     }
+    
+    btn.disabled = true;
+    btn.textContent = '✓ Added!';
+    btn.style.backgroundColor = '#2da44e';
+    btn.style.color = '#fff';
+    btn.style.borderColor = 'rgba(27,31,36,0.15)';
+    setTimeout(() => {
+      btn.textContent = '✓ In your list';
+      btn.style.backgroundColor = '#f6f8fa';
+      btn.style.color = '#57606a';
+      btn.style.borderColor = '#d0d7de';
+    }, 2000);
   }
 
   document.getElementById('search-form').addEventListener('submit', (e) => {
@@ -307,7 +336,7 @@
 
   (async () => {
     await loadDepartments();
-    await loadTracked();
+    loadTracked();
     fetchProfessors('', '', 50, 1);
   })();
 </script>

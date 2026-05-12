@@ -57,14 +57,31 @@
     PENDING:       {bg:'#fff8c5', color:'#9a6700', border:'#d4a72c', label:'Pending'},
   };
   const STATUS_OPTIONS = Object.keys(STATUS_STYLES);
+  const STORAGE_KEY = 'professorTracker_tracked';
 
   let allTracked = [];
 
-  async function load() {
-    const res = await fetch('/api/tracked');
+  function loadFromStorage() {
+    try {
+      const data = localStorage.getItem(STORAGE_KEY);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      console.error('Error loading from storage:', e);
+      return [];
+    }
+  }
+
+  function saveToStorage(tracked) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(tracked));
+    } catch (e) {
+      console.error('Error saving to storage:', e);
+    }
+  }
+
+  function load() {
     document.getElementById('loading').style.display = 'none';
-    if (!res.ok) return;
-    allTracked = await res.json();
+    allTracked = loadFromStorage();
     render();
   }
 
@@ -139,19 +156,17 @@
     return tr;
   }
 
-  async function updateStatus(id, newStatus, selectEl) {
+  function updateStatus(id, newStatus, selectEl) {
     const style = STATUS_STYLES[newStatus] || STATUS_STYLES.NOT_CONTACTED;
     selectEl.style.backgroundColor = style.bg;
     selectEl.style.borderColor = style.border;
     selectEl.style.color = style.color;
 
-    await fetch('/api/tracked', {
-      method: 'PATCH',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({id, status: newStatus})
-    });
     const item = allTracked.find(t => t.id === id);
-    if (item) item.status = newStatus;
+    if (item) {
+      item.status = newStatus;
+      saveToStorage(allTracked);
+    }
   }
 
   function editNotes(id, current) {
@@ -174,16 +189,12 @@
     if (e.key === 'Escape') cancelNotes(id);
   }
 
-  async function saveNotes(id) {
+  function saveNotes(id) {
     const notes = document.getElementById('notes-input-' + id).value;
-    const res = await fetch('/api/tracked', {
-      method: 'PATCH',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({id, notes})
-    });
-    if (res.ok) {
-      const item = allTracked.find(t => t.id === id);
-      if (item) item.notes = notes;
+    const item = allTracked.find(t => t.id === id);
+    if (item) {
+      item.notes = notes;
+      saveToStorage(allTracked);
       const cell = document.getElementById('notes-cell-' + id);
       cell.innerHTML = `<span onclick="editNotes('${id}', \`${notes.replace(/`/g,'\\`')}\`)"
         style="color:${notes ? '#24292f' : '#8c959f'};font-size:13px;cursor:pointer;display:block;padding:4px;border-radius:4px"
@@ -191,7 +202,7 @@
     }
   }
 
-  async function cancelNotes(id) {
+  function cancelNotes(id) {
     const item = allTracked.find(t => t.id === id);
     const notes = item ? item.notes : '';
     const cell = document.getElementById('notes-cell-' + id);
@@ -200,16 +211,10 @@
       title="Click to edit">${notes || 'Add notes...'}</span>`;
   }
 
-  async function removeFromList(id) {
-    const res = await fetch('/api/tracked', {
-      method: 'DELETE',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({id})
-    });
-    if (res.ok) {
-      allTracked = allTracked.filter(t => t.id !== id);
-      render();
-    }
+  function removeFromList(id) {
+    allTracked = allTracked.filter(t => t.id !== id);
+    saveToStorage(allTracked);
+    render();
   }
 
   load();
